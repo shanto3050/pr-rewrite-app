@@ -1,0 +1,8 @@
+{
+  "name": "rewrite-ai",
+  "private": true,
+  "description": "Rewrite AI — Android app + rewrite API (Vercel or Firebase)",
+  "dependencies": {
+    "openai": "^4.24.0"
+  }
+}

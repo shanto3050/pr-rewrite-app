@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Rewrite AI</string>
+    <string name="notification_channel_name">Rewrite AI</string>
+    <string name="notification_title">Rewrite AI active</string>
+    <string name="notification_text">Tap bubble to rewrite text. Drag to X to close.</string>
+    <!-- Set to your rewrite API base URL: Vercel = https://YOUR_PROJECT.vercel.app/api (no trailing slash) -->
+    <string name="firebase_rewrite_base_url" translatable="false">https://YOUR_PROJECT.vercel.app/api</string>
+</resources>

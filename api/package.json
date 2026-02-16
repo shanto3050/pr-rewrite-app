@@ -1,0 +1,7 @@
+{
+  "name": "rewrite-ai-api",
+  "private": true,
+  "dependencies": {
+    "openai": "^4.24.0"
+  }
+}
