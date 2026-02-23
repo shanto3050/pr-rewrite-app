@@ -130,22 +130,49 @@ npm -v
 
 ---
 
-## Step 5: Add your OpenAI API key in Vercel
+## Step 5: Add your OpenAI API key in Vercel (step-by-step)
 
-1. Go to [vercel.com/dashboard](https://vercel.com/dashboard) and open your project (e.g. **rewrite-ai**).
-2. Go to **Settings** → **Environment Variables**.
-3. Add a variable:
-   - **Key:** `OPENAI_API_KEY`
-   - **Value:** your OpenAI key (e.g. `sk-...`)
-   - **Environment:** check **Production** (and **Preview** if you want it for preview deploys).
-4. Click **Save**.
+Do this in the Vercel website. Your API key is only stored on Vercel’s servers; the Android app never sees it.
 
-5. Redeploy so the new variable is used:
-   - **Deployments** tab → click the **⋯** on the latest deployment → **Redeploy**.
-   Or in the project folder run:
-   ```bash
-   npx vercel --prod
+### 5.1 Open the Vercel dashboard
+
+1. In your browser, go to **[vercel.com](https://vercel.com)** and log in.
+2. You should see your **dashboard** with a list of projects.
+3. Click the **project** that hosts the rewrite API (e.g. **pr-rewrite-appver10** or the name you gave it).
+
+### 5.2 Open Environment Variables
+
+1. At the top of the project page you’ll see tabs: **Deployments**, **Analytics**, **Logs**, **Settings**, etc.
+2. Click **Settings**.
+3. In the left sidebar under your project name, look for **Environment Variables**.
+4. Click **Environment Variables**.
+
+### 5.3 Add the OpenAI API key
+
+1. You’ll see a form or table for adding variables. Find the **“Add New”** or **“Key”** / **“Value”** fields.
+2. **Key (name):** type exactly:
+   ```text
+   OPENAI_API_KEY
    ```
+   Use all caps and underscores; the API code looks for this exact name.
+3. **Value:** paste your OpenAI API key (starts with `sk-...`).  
+   Get it from [platform.openai.com](https://platform.openai.com) → **API keys** → **Create new secret key**.
+4. **Environment:** select where this key is used:
+   - Check **Production** (so your live URL uses it).
+   - Optionally check **Preview** if you want preview deployments to work too.
+5. Click **Save** (or **Add** / **Confirm**). The new variable should appear in the list.
+
+### 5.4 Redeploy so the key is used
+
+New environment variables are only applied on the **next** deploy. Existing deployments don’t see them.
+
+1. Click the **Deployments** tab at the top.
+2. Find the **latest deployment** (top of the list).
+3. Click the **three dots (⋯)** or **“More”** on the right of that row.
+4. Click **Redeploy** (or **Redeploy with existing build**).
+5. Confirm if asked. Wait until the deployment status is **Ready**.
+
+After this, your Vercel URL will use `OPENAI_API_KEY` for the rewrite API. You can test it from the app or with curl (see “Test the API” at the end of this doc).
 
 ---
 

@@ -10,7 +10,8 @@ interface RewriteApi {
 
     data class RewriteRequest(
         val text: String,
-        val style: String
+        val style: String,
+        val regenerate: Boolean = false
     )
 
     data class RewriteResponse(

@@ -1,0 +1,34 @@
+# Ignore everything that is not needed for Vercel serverless API deploy.
+# This keeps uploads small (only api/ + config) instead of the whole repo (~2 GB with Android).
+
+# Android app (source + builds)
+app/
+*.apk
+*.aab
+*.aar
+
+# Gradle and builds
+.gradle/
+build/
+**/build/
+
+# IDE and local
+.idea/
+*.iml
+local.properties
+.DS_Store
+
+# Docs (not needed at runtime)
+docs/
+
+# Git
+.git/
+.gitignore
+
+# Node (Vercel installs deps from package.json if present)
+node_modules/
+
+# Env and misc
+.env
+.env.*
+*.log

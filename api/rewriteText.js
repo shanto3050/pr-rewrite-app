@@ -7,28 +7,31 @@
 const STYLES = ["SUPER_CASUAL", "CASUAL_POLITE", "POLITE", "VERY_FORMAL"];
 const MAX_TEXT_LENGTH = 2000;
 
+const BASE_PROMPT =
+  "You are a rewriting assistant. Keep the SAME LANGUAGE as the input and the same meaning. " +
+  "Do NOT translate. Respond with ONLY the rewritten text, no quotes or explanation.";
+
 const STYLE_PROMPTS = {
   SUPER_CASUAL:
-    "You are a rewriting assistant. Rewrite the text in a very casual, friendly tone suitable for close friends or casual chat. " +
-    "Keep the SAME LANGUAGE as the input and keep the same meaning. " +
-    "If the input is Japanese, use natural spoken casual Japanese (ため口). " +
-    "Do NOT translate to a different language. Respond with the rewritten text only.",
+    BASE_PROMPT +
+    " Rewrite in a very casual, friendly tone (close friends / casual chat). " +
+    "If the input is Japanese, use natural spoken casual Japanese (ため口).",
   CASUAL_POLITE:
-    "You are a rewriting assistant. Rewrite the text in a somewhat casual but still polite tone. " +
-    "Keep the SAME LANGUAGE as the input and keep the same meaning. " +
-    "If the input is Japanese, use soft and approachable 丁寧語 (polite Japanese) that you would use with colleagues or acquaintances. " +
-    "Do NOT translate to a different language. Respond with the rewritten text only.",
+    BASE_PROMPT +
+    " Rewrite in a somewhat casual but still polite tone (colleagues / acquaintances). " +
+    "If the input is Japanese, use soft 丁寧語.",
   POLITE:
-    "You are a rewriting assistant. Rewrite the text in a polite, professional tone suitable for business emails or chats. " +
-    "Keep the SAME LANGUAGE as the input and keep the same meaning. " +
-    "If the input is Japanese, use appropriate ビジネス敬語 (business polite Japanese). " +
-    "Do NOT translate to a different language. Respond with the rewritten text only.",
+    BASE_PROMPT +
+    " Rewrite in a polite, professional tone (business emails/chats). " +
+    "If the input is Japanese, use ビジネス敬語.",
   VERY_FORMAL:
-    "You are a rewriting assistant. Rewrite the text in a very formal, highly polite tone, suitable for important business, official documents, or communication with superiors or customers. " +
-    "Keep the SAME LANGUAGE as the input and keep the same meaning. " +
-    "If the input is Japanese, use very polite 敬語 expressions. " +
-    "Do NOT translate to a different language. Respond with the rewritten text only.",
+    BASE_PROMPT +
+    " Rewrite in a very formal, highly polite tone (important business / superiors / customers). " +
+    "If the input is Japanese, use very polite 敬語.",
 };
+
+const REGENERATE_INSTRUCTION =
+  "The user asked for another version. You MUST give a different phrasing: different wording, sentence structure, or expressions, while keeping the same tone and meaning. Do not repeat the previous answer.";
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -42,10 +45,11 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const { text, style } = req.body || {};
+  const { text, style, regenerate } = req.body || {};
   if (!text || typeof text !== "string") {
     return res.status(400).json({ error: "Invalid or missing text" });
   }
+  const isRegenerate = regenerate === true;
   if (text.length > MAX_TEXT_LENGTH) {
     return res.status(400).json({
       error: `Text must be at most ${MAX_TEXT_LENGTH} characters`,
@@ -65,14 +69,17 @@ module.exports = async (req, res) => {
 
   const OpenAI = require("openai");
   const openai = new OpenAI({ apiKey });
+  const systemContent = isRegenerate
+    ? STYLE_PROMPTS[style] + "\n\n" + REGENERATE_INSTRUCTION
+    : STYLE_PROMPTS[style];
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: STYLE_PROMPTS[style] },
+        { role: "system", content: systemContent },
         { role: "user", content: text },
       ],
-      temperature: 0.7,
+      temperature: isRegenerate ? 0.9 : 0.7,
       max_tokens: 1024,
     });
     const rewritten = completion.choices[0]?.message?.content?.trim() ?? "";

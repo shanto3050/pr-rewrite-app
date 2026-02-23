@@ -17,10 +17,10 @@ class RewriteRepository(
         .build()
         .create(RewriteApi::class.java)
 
-    suspend fun rewrite(text: String, style: RewriteStyle): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun rewrite(text: String, style: RewriteStyle, regenerate: Boolean = false): Result<String> = withContext(Dispatchers.IO) {
         try {
             val response = api.rewriteText(
-                RewriteRequest(text = text, style = style.apiValue)
+                RewriteRequest(text = text, style = style.apiValue, regenerate = regenerate)
             )
             Result.success(response.rewritten)
         } catch (e: UnknownHostException) {

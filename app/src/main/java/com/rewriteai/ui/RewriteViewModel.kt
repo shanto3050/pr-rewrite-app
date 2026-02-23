@@ -21,14 +21,14 @@ class RewriteViewModel(
         _state.update { it.copy(originalText = text) }
     }
 
-    fun rewrite(style: RewriteStyle) {
+    fun rewrite(style: RewriteStyle, regenerate: Boolean = false) {
         val text = _state.value.originalText.trim()
         if (text.isEmpty()) return
         viewModelScope.launch {
             _state.update { state ->
                 state.copy(results = state.results + (style to StyleResult.Loading))
             }
-            val result = repository.rewrite(text, style)
+            val result = repository.rewrite(text, style, regenerate)
             _state.update { state ->
                 val newResult = when {
                     result.isSuccess -> StyleResult.Success(result.getOrNull() ?: "")
@@ -40,7 +40,7 @@ class RewriteViewModel(
     }
 
     fun regenerate(style: RewriteStyle) {
-        rewrite(style)
+        rewrite(style, regenerate = true)
     }
 
     fun setExpanded(expanded: Boolean) {

@@ -4,22 +4,28 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
-import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.rewriteai.MainActivity
+import com.rewriteai.ProcessTextActivity
 import com.rewriteai.R
 import com.rewriteai.data.RewriteRepository
 import com.rewriteai.ui.RewriteOverlayContent
 import com.rewriteai.ui.RewriteViewModel
 
-class RewriteOverlayService : Service() {
+class RewriteOverlayService : LifecycleService() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: android.view.View? = null
@@ -28,16 +34,22 @@ class RewriteOverlayService : Service() {
     private var isExpanded = false
     private var fromProcessText = false
     private var initialText = ""
-
-    override fun onBind(intent: Intent?): IBinder? = null
+    private lateinit var savedStateOwner: ServiceSavedStateOwner
 
     override fun onCreate() {
         super.onCreate()
+        // Create a SavedStateRegistryOwner so Compose is happy even outside an Activity
+        savedStateOwner = ServiceSavedStateOwner(this)
+        savedStateOwner.performRestore()
+
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Call super so LifecycleService can dispatch lifecycle events correctly
+        super.onStartCommand(intent, flags, startId)
+
         fromProcessText = intent?.getBooleanExtra(EXTRA_FROM_PROCESS_TEXT, false) ?: false
         initialText = intent?.getCharSequenceExtra(EXTRA_INITIAL_TEXT)?.toString() ?: ""
 
@@ -96,7 +108,10 @@ class RewriteOverlayService : Service() {
         if (initialText.isNotEmpty()) viewModel.setOriginalText(initialText)
         if (fromProcessText) viewModel.setExpanded(true)
 
-        overlayView = androidx.compose.ui.platform.ComposeView(this).apply {
+        overlayView = ComposeView(this).apply {
+            // Attach LifecycleOwner and SavedStateRegistryOwner so Compose can run safely
+            setViewTreeLifecycleOwner(this@RewriteOverlayService)
+            setViewTreeSavedStateRegistryOwner(savedStateOwner)
             setContent {
                 RewriteOverlayContent(
                     viewModel = viewModel,
@@ -133,11 +148,19 @@ class RewriteOverlayService : Service() {
         val wm = windowManager ?: return
         val metrics = resources.displayMetrics
         if (expanded) {
-            params.width = (metrics.widthPixels * 0.9).toInt()
+            // Make the panel wide and center it on screen
+            params.width = (metrics.widthPixels * 0.9f).toInt()
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
+            params.x = ((metrics.widthPixels - params.width) / 2f).toInt()
+            params.y = (metrics.heightPixels * 0.15f).toInt()
+            // Allow the panel to take focus and receive keyboard input
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
         } else {
             params.width = WindowManager.LayoutParams.WRAP_CONTENT
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
+            // When collapsed, don't steal focus from underlying app
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            // Keep last x/y so the bubble stays where the user left it
         }
         wm.updateViewLayout(view, params)
     }
@@ -158,5 +181,26 @@ class RewriteOverlayService : Service() {
         private const val CHANNEL_ID = "rewrite_ai_overlay"
         private const val NOTIFICATION_ID = 1001
         private const val BUBBLE_SIZE = 56
+    }
+}
+
+/**
+ * Simple SavedStateRegistryOwner implementation backed by the service's lifecycle.
+ */
+private class ServiceSavedStateOwner(
+    private val lifecycleService: LifecycleService
+) : SavedStateRegistryOwner {
+
+    private val controller: SavedStateRegistryController =
+        SavedStateRegistryController.create(this)
+
+    override val lifecycle
+        get() = lifecycleService.lifecycle
+
+    override val savedStateRegistry: SavedStateRegistry
+        get() = controller.savedStateRegistry
+
+    fun performRestore() {
+        controller.performRestore(null)
     }
 }
