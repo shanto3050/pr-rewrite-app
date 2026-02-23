@@ -8,8 +8,10 @@ const STYLES = ["SUPER_CASUAL", "CASUAL_POLITE", "POLITE", "VERY_FORMAL"];
 const MAX_TEXT_LENGTH = 2000;
 
 const BASE_PROMPT =
-  "You are a rewriting assistant. Keep the SAME LANGUAGE as the input and the same meaning. " +
-  "Do NOT translate. Respond with ONLY the rewritten text, no quotes or explanation.";
+  "You are a rewriting assistant. CRITICAL: Output MUST be in the SAME LANGUAGE as the user's input. " +
+  "If the input is in English, respond ONLY in English. If the input is in Japanese, respond ONLY in Japanese. " +
+  "Do NOT translate and do NOT switch language. Keep the same meaning. " +
+  "Respond with ONLY the rewritten text, no quotes or explanation.";
 
 const STYLE_PROMPTS = {
   SUPER_CASUAL:
@@ -31,7 +33,8 @@ const STYLE_PROMPTS = {
 };
 
 const REGENERATE_INSTRUCTION =
-  "The user asked for another version. You MUST give a different phrasing: different wording, sentence structure, or expressions, while keeping the same tone and meaning. Do not repeat the previous answer.";
+  "The user asked for another version. You MUST give a different phrasing: different wording, sentence structure, or expressions, while keeping the same tone and meaning. Do not repeat the previous answer. " +
+  "IMPORTANT: Keep the exact same language as the user's input; do not translate or switch to another language.";
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
