@@ -1,10 +1,14 @@
 package com.rewriteai
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -20,14 +24,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -37,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,26 +47,46 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.rewriteai.data.RewriteRepository
 import com.rewriteai.service.RewriteOverlayService
+import com.rewriteai.ui.RewriteContent
+import com.rewriteai.ui.RewriteViewModel
 
 class MainActivity : ComponentActivity() {
 
+    private lateinit var repository: RewriteRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val baseUrl = getString(R.string.firebase_rewrite_base_url).trim()
+        repository = RewriteRepository(
+            if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+        )
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     var selectedTab by rememberSaveable { mutableStateOf(0) }
+                    val viewModel: RewriteViewModel = viewModel(
+                        viewModelStoreOwner = this@MainActivity,
+                        factory = object : ViewModelProvider.Factory {
+                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                @Suppress("UNCHECKED_CAST")
+                                return RewriteViewModel(repository) as T
+                            }
+                        }
+                    )
                     Scaffold(
                         bottomBar = {
                             NavigationBar {
                                 NavigationBarItem(
                                     selected = selectedTab == 0,
                                     onClick = { selectedTab = 0 },
-                                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                                    label = { Text("Home") }
+                                    icon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                    label = { Text("Rewrite") }
                                 )
                                 NavigationBarItem(
                                     selected = selectedTab == 1,
@@ -82,11 +104,13 @@ class MainActivity : ComponentActivity() {
                         ) {
                             when (selectedTab) {
                                 0 -> HomeScreen(
-                                    modifier = Modifier.padding(horizontal = 24.dp),
+                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                    viewModel = viewModel,
                                     onStartOverlay = { checkOverlayPermissionAndStart() }
                                 )
                                 1 -> SettingsScreen(
-                                    modifier = Modifier.padding(horizontal = 24.dp)
+                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                    onStartOverlay = { checkOverlayPermissionAndStart() }
                                 )
                             }
                         }
@@ -106,41 +130,59 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
-        startForegroundService(Intent(this, RewriteOverlayService::class.java))
+        try {
+            ContextCompat.startForegroundService(this, Intent(this, RewriteOverlayService::class.java))
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to start overlay service", e)
+        }
     }
 }
 
 @Composable
 private fun HomeScreen(
     modifier: Modifier = Modifier,
+    viewModel: RewriteViewModel,
     onStartOverlay: () -> Unit
 ) {
+    val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+
     val scrollState = rememberScrollState()
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(vertical = 16.dp)
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
-        Icon(
-            imageVector = Icons.Default.Edit,
-            contentDescription = null,
-            modifier = Modifier.padding(8.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
         Text(
-            text = "Rewrite AI",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            text = "Rewrite",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold
         )
         Text(
             text = "Change tone, keep meaning",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
         )
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        RewriteContent(
+            state = state,
+            viewModel = viewModel,
+            fromProcessText = false,
+            onReplace = { },
+            onCopy = { text ->
+                clipboard?.setPrimaryClip(
+                    android.content.ClipData.newPlainText("rewritten", text)
+                )
+                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+            },
+            showReplace = false,
+            scrollable = false,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -148,50 +190,35 @@ private fun HomeScreen(
             ),
             shape = MaterialTheme.shapes.medium
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "How it works",
+                    text = "Use in other apps",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Start the floating bubble, then use it from any app to rewrite selected text in different tones—from casual to very formal.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "You can also select text and choose \"Rewrite AI\" from the share or copy menu.",
+                    text = "Open the rewrite overlay to rewrite text from any app, or use \"Rewrite AI\" from the share menu.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                FilledTonalButton(
+                    onClick = onStartOverlay,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open rewrite overlay")
+                }
             }
         }
-        Spacer(modifier = Modifier.height(32.dp))
-        Button(
-            onClick = onStartOverlay,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Text("Start floating bubble")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "The bubble stays on screen until you close it from the notification.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
     }
 }
 
 @Composable
-private fun SettingsScreen(modifier: Modifier = Modifier) {
+private fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    onStartOverlay: () -> Unit
+) {
     val context = LocalContext.current
     val versionName = try {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
@@ -270,6 +297,35 @@ private fun SettingsScreen(modifier: Modifier = Modifier) {
                     text = "Overlay permission",
                     style = MaterialTheme.typography.bodyLarge
                 )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Rewrite overlay",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Use Rewrite AI from any app without opening it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                FilledTonalButton(
+                    onClick = onStartOverlay,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open rewrite overlay")
+                }
             }
         }
     }

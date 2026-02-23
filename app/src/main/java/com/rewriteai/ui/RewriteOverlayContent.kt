@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import android.widget.Toast
 import com.rewriteai.data.RewriteStyle
 
 @Composable
@@ -115,6 +116,138 @@ private fun BubbleView(
     }
 }
 
+/**
+ * Shared rewrite UI: input, tone grid, results.
+ * Used in the main app (Home) and in the overlay panel.
+ * @param scrollable When true (overlay), content scrolls inside. When false (main app), parent handles scroll.
+ */
+@Composable
+fun RewriteContent(
+    state: RewriteUiState,
+    viewModel: RewriteViewModel,
+    fromProcessText: Boolean,
+    onReplace: (String) -> Unit,
+    onCopy: (String) -> Unit,
+    showReplace: Boolean,
+    scrollable: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+    val context = LocalContext.current
+    val hasAnyResult = state.results.isNotEmpty()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (scrollable) Modifier.verticalScroll(scrollState) else Modifier)
+    ) {
+        // Section: Original text
+        Text(
+            text = "Original text",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        OutlinedTextField(
+            value = state.originalText,
+            onValueChange = { viewModel.setOriginalText(it) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            label = { Text("Paste or type text to rewrite") },
+            placeholder = { Text("Enter or paste text here…") },
+            minLines = 2,
+            maxLines = 4,
+            shape = RoundedCornerShape(16.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                focusedLabelColor = MaterialTheme.colorScheme.primary
+            )
+        )
+
+        // Section: Choose tone (2x2 grid)
+        Text(
+            text = "Choose tone",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 16.dp)
+        )
+        val stylesChunked = RewriteStyle.entries.chunked(2)
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            stylesChunked.forEach { rowStyles ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowStyles.forEach { style ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            FilledTonalButton(
+                                onClick = {
+                                    if (state.originalText.trim().isEmpty()) {
+                                        Toast.makeText(
+                                            context,
+                                            "Enter or paste text first",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        viewModel.rewrite(style)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = style.displayName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
+                    if (rowStyles.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        // Section: Results
+        if (hasAnyResult) {
+            Text(
+                text = "Results",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+        }
+        Column(modifier = Modifier.padding(top = 8.dp)) {
+            if (!hasAnyResult) {
+                Text(
+                    text = "Select a tone above to rewrite your text.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            } else {
+                RewriteStyle.entries.forEach { style ->
+                    val result = state.results[style] ?: return@forEach
+                    Spacer(modifier = Modifier.height(12.dp))
+                    StyleResultCard(
+                        style = style,
+                        result = result,
+                        onReplace = onReplace,
+                        onCopy = onCopy,
+                        onRegenerate = { viewModel.regenerate(style) },
+                        showReplace = showReplace
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun RewritePanel(
     state: RewriteUiState,
@@ -124,10 +257,8 @@ private fun RewritePanel(
     onReplace: (String) -> Unit,
     onCopyAndClose: () -> Unit
 ) {
-    val scrollState = rememberScrollState()
     val context = LocalContext.current
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-    val hasAnyResult = state.results.isNotEmpty()
 
     Card(
         modifier = Modifier
@@ -143,10 +274,8 @@ private fun RewritePanel(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
                 .padding(24.dp)
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -161,110 +290,20 @@ private fun RewritePanel(
                     Icon(Icons.Default.Close, contentDescription = "Close")
                 }
             }
-
-            // Section: Original text
-            Text(
-                text = "Original text",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-            OutlinedTextField(
-                value = state.originalText,
-                onValueChange = { viewModel.setOriginalText(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                label = { Text("Paste or type text to rewrite") },
-                placeholder = { Text("Enter or paste text here…") },
-                minLines = 2,
-                maxLines = 4,
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary
-                )
-            )
-
-            // Section: Choose tone (2x2 grid)
-            Text(
-                text = "Choose tone",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-            val stylesChunked = RewriteStyle.entries.chunked(2)
-            Column(
-                modifier = Modifier.padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                stylesChunked.forEach { rowStyles ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowStyles.forEach { style ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                FilledTonalButton(
-                                    onClick = { viewModel.rewrite(style) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text(
-                                        text = style.displayName,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        maxLines = 2
-                                    )
-                                }
-                            }
-                        }
-                        // Pad row if odd number (e.g. 4 items = 2+2, no pad needed)
-                        if (rowStyles.size == 1) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-
-            // Section: Results
-            if (hasAnyResult) {
-                Text(
-                    text = "Results",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-            }
-            Column(
-                modifier = Modifier.padding(top = 8.dp)
-            ) {
-                if (!hasAnyResult) {
-                    Text(
-                        text = "Select a tone above to rewrite your text.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp)
+            RewriteContent(
+                state = state,
+                viewModel = viewModel,
+                fromProcessText = fromProcessText,
+                onReplace = onReplace,
+                onCopy = {
+                    clipboard?.setPrimaryClip(
+                        android.content.ClipData.newPlainText("rewritten", it)
                     )
-                } else {
-                    RewriteStyle.entries.forEach { style ->
-                        val result = state.results[style] ?: return@forEach
-                        Spacer(modifier = Modifier.height(12.dp))
-                        StyleResultCard(
-                            style = style,
-                            result = result,
-                            onReplace = { text -> onReplace(text) },
-                            onCopy = {
-                                clipboard?.setPrimaryClip(
-                                    android.content.ClipData.newPlainText("rewritten", it)
-                                )
-                                onCopyAndClose()
-                            },
-                            onRegenerate = { viewModel.regenerate(style) },
-                            showReplace = fromProcessText
-                        )
-                    }
-                }
-            }
+                    onCopyAndClose()
+                },
+                showReplace = fromProcessText,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }

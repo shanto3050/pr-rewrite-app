@@ -24,14 +24,14 @@ In short: get an OpenAI API key → run `npm install` and `npx vercel` → add `
 
 ## How to use
 
-- **Floating bubble:** Open the app from the launcher → tap “Start bubble”. A bubble appears; tap it to open the rewrite panel. Paste or type text, pick a style (LINE / Teams / Formal), then Copy or Replace.
+- **Overlay:** Open the app from the launcher → tap “Open rewrite overlay”. The rewrite panel opens; paste or type text, pick a style (LINE / Teams / Formal), then Copy or Replace. Close with the X button or the back key.
 - **From selected text:** In any app, select text → choose **Rewrite AI** from the share/copy menu. The panel opens with that text; use **Replace** to put the rewritten text back into the original app.
 
 ---
 
 ## Project layout
 
-- **`app/`** — Android (Kotlin, Jetpack Compose): overlay service, bubble, rewrite UI, ProcessText, MainActivity.
+- **`app/`** — Android (Kotlin, Jetpack Compose): overlay service, rewrite UI, ProcessText, MainActivity.
 - **`api/`** — Vercel serverless function: `rewriteText` (same behavior as the Firebase function).
 - **`functions/`** — Firebase Cloud Functions (Node.js), optional if you use Firebase.
 - **`docs/`** — Setup guides and architecture.

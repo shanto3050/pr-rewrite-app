@@ -31,8 +31,15 @@
             android:exported="true"
             android:theme="@style/Theme.RewriteAI.Transparent"
             android:taskAffinity="">
+            <!-- Text selection "Copy to" / "Edit" menu (PROCESS_TEXT) -->
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Share sheet when sharing text from apps like LINE -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>

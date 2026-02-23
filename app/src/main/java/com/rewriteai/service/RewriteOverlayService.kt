@@ -7,9 +7,16 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
-import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.util.Log
+import android.view.KeyEvent
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
@@ -47,17 +54,45 @@ class RewriteOverlayService : LifecycleService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Call super so LifecycleService can dispatch lifecycle events correctly
         super.onStartCommand(intent, flags, startId)
-
+        Log.d(TAG, "onStartCommand begin")
+        val notification = try {
+            createNotification()
+        } catch (e: Exception) {
+            Log.e(TAG, "createNotification failed, using fallback", e)
+            createMinimalNotification()
+        }
+        try {
+            startForeground(NOTIFICATION_ID, notification)
+            Log.d(TAG, "startForeground done")
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         fromProcessText = intent?.getBooleanExtra(EXTRA_FROM_PROCESS_TEXT, false) ?: false
         initialText = intent?.getCharSequenceExtra(EXTRA_INITIAL_TEXT)?.toString() ?: ""
 
         if (overlayView == null) {
-            showOverlay()
+            Handler(Looper.getMainLooper()).post {
+                Log.d(TAG, "showOverlay posted run")
+                try {
+                    showOverlay()
+                    Log.d(TAG, "showOverlay done")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to show overlay", e)
+                    e.printStackTrace()
+                    stopSelf()
+                }
+            }
         } else {
-            // Already showing; update initial text if from PROCESS_TEXT
-            (overlayView?.getTag(R.id.rewrite_view_model_tag) as? RewriteViewModel)?.setOriginalText(initialText)
+            val vm = overlayView?.getTag(R.id.rewrite_view_model_tag) as? RewriteViewModel
+            vm?.setOriginalText(initialText)
+            if (fromProcessText) {
+                isExpanded = true
+                vm?.setExpanded(true)
+                updateOverlaySize(true)
+            }
         }
 
         return START_NOT_STICKY
@@ -71,60 +106,100 @@ class RewriteOverlayService : LifecycleService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply { setShowBadge(false) }
-            (getSystemService(NotificationManager::class.java)).createNotificationChannel(channel)
+            try {
+                val name = try {
+                    getString(R.string.notification_channel_name)
+                } catch (e: Exception) {
+                    "Rewrite AI"
+                }
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    name,
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply { setShowBadge(false) }
+                (getSystemService(NotificationManager::class.java)).createNotificationChannel(channel)
+            } catch (e: Exception) {
+                Log.e(TAG, "createNotificationChannel failed", e)
+            }
         }
     }
 
     private fun showOverlay() {
-        startForeground(NOTIFICATION_ID, createNotification())
-
+        Log.d(TAG, "showOverlay begin")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "Overlay permission not granted, cannot show bubble")
+            stopSelf()
+            return
+        }
+        val wm = windowManager ?: run {
+            Log.e(TAG, "WindowManager is null")
+            stopSelf()
+            return
+        }
         val metrics = resources.displayMetrics
         val screenWidth = metrics.widthPixels
-        val screenHeight = metrics.heightPixels
+        val panelWidth = (screenWidth * 0.9f).toInt()
+        val panelX = (screenWidth - panelWidth) / 2
+        val panelY = (metrics.heightPixels * 0.15f).toInt()
 
         bubbleParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            panelWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = screenWidth - BUBBLE_SIZE - 32
-            y = 128
-            width = WindowManager.LayoutParams.WRAP_CONTENT
-            height = WindowManager.LayoutParams.WRAP_CONTENT
+            x = panelX
+            y = panelY
         }
 
         val baseUrl = "${getString(R.string.firebase_rewrite_base_url).trimEnd('/')}/"
         val repository = RewriteRepository(baseUrl)
         val viewModel = RewriteViewModel(repository)
         if (initialText.isNotEmpty()) viewModel.setOriginalText(initialText)
-        if (fromProcessText) viewModel.setExpanded(true)
+        viewModel.setExpanded(true)
 
-        overlayView = ComposeView(this).apply {
-            // Attach LifecycleOwner and SavedStateRegistryOwner so Compose can run safely
-            setViewTreeLifecycleOwner(this@RewriteOverlayService)
-            setViewTreeSavedStateRegistryOwner(savedStateOwner)
+        val composeView = ComposeView(applicationContext).apply {
             setContent {
-                RewriteOverlayContent(
-                    viewModel = viewModel,
-                    fromProcessText = fromProcessText,
-                    onDismiss = { stopSelf() },
-                    onReplace = { text -> sendReplaceResultAndFinish(text) },
-                    onCopyAndClose = { stopSelf() },
-                    onExpandChanged = { expanded -> updateOverlaySize(expanded) }
-                )
+                MaterialTheme {
+                    RewriteOverlayContent(
+                        viewModel = viewModel,
+                        fromProcessText = fromProcessText,
+                        onDismiss = { stopSelf() },
+                        onReplace = { text -> sendReplaceResultAndFinish(text) },
+                        onCopyAndClose = { stopSelf() },
+                        onExpandChanged = { expanded ->
+                            isExpanded = expanded
+                            updateOverlaySize(expanded)
+                        }
+                    )
+                }
             }
         }
 
-        windowManager?.addView(overlayView, bubbleParams)
+        val wrapper = FrameLayout(this).apply {
+            setTag(R.id.rewrite_view_model_tag, viewModel)
+            addView(composeView, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+            setViewTreeLifecycleOwner(this@RewriteOverlayService)
+            setViewTreeSavedStateRegistryOwner(savedStateOwner)
+        }
+
+        overlayView = wrapper
+        try {
+            Log.d(TAG, "addView about to run")
+            wm.addView(overlayView, bubbleParams)
+            updateOverlaySize(true)
+            Log.d(TAG, "addView done")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add overlay view", e)
+            overlayView = null
+            stopSelf()
+        }
     }
 
     private fun createNotification(): Notification {
@@ -142,25 +217,42 @@ class RewriteOverlayService : LifecycleService() {
             .build()
     }
 
+    /** Fallback if createNotification() throws; uses only system resources so it cannot fail. */
+    private fun createMinimalNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Rewrite AI")
+            .setContentText("Active")
+            .setSmallIcon(android.R.drawable.ic_menu_edit)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
     private fun updateOverlaySize(expanded: Boolean) {
+        isExpanded = expanded
         val view = overlayView ?: return
         val params = bubbleParams ?: return
         val wm = windowManager ?: return
         val metrics = resources.displayMetrics
         if (expanded) {
-            // Make the panel wide and center it on screen
             params.width = (metrics.widthPixels * 0.9f).toInt()
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
             params.x = ((metrics.widthPixels - params.width) / 2f).toInt()
             params.y = (metrics.heightPixels * 0.15f).toInt()
-            // Allow the panel to take focus and receive keyboard input
             params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+            view.isFocusableInTouchMode = true
+            view.requestFocus()
+            view.setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                    (view.context as? RewriteOverlayService)?.stopSelf()
+                    true
+                } else false
+            }
         } else {
             params.width = WindowManager.LayoutParams.WRAP_CONTENT
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
-            // When collapsed, don't steal focus from underlying app
             params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-            // Keep last x/y so the bubble stays where the user left it
+            view.setOnKeyListener(null)
         }
         wm.updateViewLayout(view, params)
     }
@@ -175,12 +267,12 @@ class RewriteOverlayService : LifecycleService() {
     }
 
     companion object {
+        private const val TAG = "RewriteOverlayService"
         const val EXTRA_INITIAL_TEXT = "initial_text"
         const val EXTRA_FROM_PROCESS_TEXT = "from_process_text"
 
         private const val CHANNEL_ID = "rewrite_ai_overlay"
         private const val NOTIFICATION_ID = 1001
-        private const val BUBBLE_SIZE = 56
     }
 }
 
